@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { API_BASE, MAX_UPLOAD_BYTES, recognizeImage } from "@/lib/api";
 import type { RecognizeResponse } from "@/lib/types";
 import PlateResult from "./PlateResult";
@@ -133,12 +133,52 @@ export default function Scanner() {
     );
   };
 
+  const dragDepth = useRef(0);
+
+  const acceptDrop = useCallback(
+    (event: DragEvent) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+    },
+    [],
+  );
+
+  const onDragEnter = useCallback((event: DragEvent) => {
+    event.preventDefault();
+    dragDepth.current += 1;
+    setDragOver(true);
+  }, []);
+
+  const onDragLeave = useCallback((event: DragEvent) => {
+    event.preventDefault();
+    dragDepth.current = Math.max(0, dragDepth.current - 1);
+    if (dragDepth.current === 0) setDragOver(false);
+  }, []);
+
+  const onDrop = useCallback(
+    (event: DragEvent) => {
+      event.preventDefault();
+      dragDepth.current = 0;
+      setDragOver(false);
+      stopCamera();
+      const file = event.dataTransfer.files[0];
+      if (file) void runFile(file);
+    },
+    [runFile, stopCamera],
+  );
+
   const imageW = result?.image.width ?? 1;
   const imageH = result?.image.height ?? 1;
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
-      <section className={`hud-panel relative overflow-hidden ${dragOver ? "ring-1 ring-amber-400/70" : ""}`}>
+      <section
+        className={`hud-panel relative overflow-hidden ${dragOver ? "ring-1 ring-amber-400/70" : ""}`}
+        onDragEnter={onDragEnter}
+        onDragOver={acceptDrop}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         <input
           ref={inputRef}
           type="file"
@@ -165,7 +205,7 @@ export default function Scanner() {
             </div>
           </div>
         ) : preview ? (
-          <div className="flex justify-center bg-black">
+          <div className="relative flex min-h-[280px] justify-center bg-black">
             <div className="relative inline-block max-h-[70vh] max-w-full">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={preview} alt="Uploaded vehicle" className="block max-h-[70vh] max-w-full" />
@@ -188,22 +228,18 @@ export default function Scanner() {
             {busy ? <div className="scan-beam" /> : null}
             <div className="pointer-events-none absolute inset-0 reticle" />
             </div>
+            {dragOver ? (
+              <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/55">
+                <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-amber-400">
+                  Drop to replace
+                </p>
+              </div>
+            ) : null}
           </div>
         ) : (
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
-            onDragOver={(event) => {
-              event.preventDefault();
-              setDragOver(true);
-            }}
-            onDragLeave={() => setDragOver(false)}
-            onDrop={(event) => {
-              event.preventDefault();
-              setDragOver(false);
-              const file = event.dataTransfer.files[0];
-              if (file) void runFile(file);
-            }}
             className="flex aspect-[4/3] w-full flex-col items-center justify-center gap-4 px-6 text-center"
           >
             <div className="reticle-box relative flex h-full min-h-[280px] w-full items-center justify-center">
