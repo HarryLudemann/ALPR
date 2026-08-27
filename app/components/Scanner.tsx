@@ -11,13 +11,36 @@ function revoke(url: string | null) {
   if (url) URL.revokeObjectURL(url);
 }
 
+function containRect(
+  containerW: number,
+  containerH: number,
+  imageW: number,
+  imageH: number,
+) {
+  if (containerW <= 0 || containerH <= 0 || imageW <= 0 || imageH <= 0) {
+    return { left: 0, top: 0, width: 0, height: 0 };
+  }
+  const scale = Math.min(containerW / imageW, containerH / imageH);
+  const width = imageW * scale;
+  const height = imageH * scale;
+  return {
+    left: (containerW - width) / 2,
+    top: (containerH - height) / 2,
+    width,
+    height,
+  };
+}
+
 export default function Scanner() {
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  const stageRef = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [previewSize, setPreviewSize] = useState({ width: 0, height: 0 });
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
   const [dragOver, setDragOver] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +79,7 @@ export default function Scanner() {
 
     setError(null);
     setResult(null);
+    setPreviewSize({ width: 0, height: 0 });
     setBusy(true);
     setPreview((current) => {
       revoke(current);
@@ -167,8 +191,22 @@ export default function Scanner() {
     [runFile, stopCamera],
   );
 
-  const imageW = result?.image.width ?? 1;
-  const imageH = result?.image.height ?? 1;
+  const imageW = result?.image.width || previewSize.width;
+  const imageH = result?.image.height || previewSize.height;
+  const overlay = containRect(stageSize.width, stageSize.height, imageW, imageH);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const measure = () => {
+      const rect = stage.getBoundingClientRect();
+      setStageSize({ width: rect.width, height: rect.height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [preview, camera]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.8fr)]">
@@ -205,29 +243,50 @@ export default function Scanner() {
             </div>
           </div>
         ) : preview ? (
-          <div className="relative flex min-h-[280px] justify-center bg-black">
-            <div className="relative inline-block max-h-[70vh] max-w-full">
+          <div ref={stageRef} className="relative aspect-[4/3] w-full bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={preview} alt="Uploaded vehicle" className="block max-h-[70vh] max-w-full" />
-            {result?.plates.map((plate, index) => (
+            <img
+              key={preview}
+              src={preview}
+              alt="Uploaded vehicle"
+              className="absolute inset-0 h-full w-full object-contain"
+              onLoad={(event) => {
+                setPreviewSize({
+                  width: event.currentTarget.naturalWidth,
+                  height: event.currentTarget.naturalHeight,
+                });
+              }}
+            />
+            {result && overlay.width > 0 && overlay.height > 0 ? (
               <div
-                key={`${plate.text}-${index}`}
-                className="pointer-events-none absolute border-2 border-amber-400 shadow-[0_0_18px_rgba(245,197,24,0.35)]"
+                className="pointer-events-none absolute"
                 style={{
-                  left: `${(plate.bbox.x1 / imageW) * 100}%`,
-                  top: `${(plate.bbox.y1 / imageH) * 100}%`,
-                  width: `${((plate.bbox.x2 - plate.bbox.x1) / imageW) * 100}%`,
-                  height: `${((plate.bbox.y2 - plate.bbox.y1) / imageH) * 100}%`,
+                  left: overlay.left,
+                  top: overlay.top,
+                  width: overlay.width,
+                  height: overlay.height,
                 }}
               >
-                <span className="absolute -top-6 left-0 whitespace-nowrap bg-amber-400 px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wider text-black">
-                  {plate.text || "PLATE"}
-                </span>
+                {result.plates.map((plate, index) => (
+                  <div
+                    key={`${plate.text}-${index}`}
+                    className="absolute border-2 border-amber-400 shadow-[0_0_18px_rgba(245,197,24,0.35)]"
+                    style={{
+                      left: `${(plate.bbox.x1 / imageW) * 100}%`,
+                      top: `${(plate.bbox.y1 / imageH) * 100}%`,
+                      width: `${((plate.bbox.x2 - plate.bbox.x1) / imageW) * 100}%`,
+                      height: `${((plate.bbox.y2 - plate.bbox.y1) / imageH) * 100}%`,
+                    }}
+                  >
+                    <span className="absolute -top-6 left-0 whitespace-nowrap bg-amber-400 px-1.5 py-0.5 font-mono text-[11px] font-semibold tracking-wider text-black">
+                      {plate.text || "PLATE"}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : null}
             {busy ? <div className="scan-beam" /> : null}
             <div className="pointer-events-none absolute inset-0 reticle" />
-            </div>
             {dragOver ? (
               <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/55">
                 <p className="font-mono text-[11px] uppercase tracking-[0.28em] text-amber-400">
