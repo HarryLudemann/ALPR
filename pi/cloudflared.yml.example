@@ -1,0 +1,7 @@
+tunnel: REPLACE_WITH_TUNNEL_ID
+credentials-file: /home/pi/.cloudflared/REPLACE_WITH_TUNNEL_ID.json
+
+ingress:
+  - hostname: alpr.api.harryludemann.com
+    service: http://127.0.0.1:8000
+  - service: http_status:404
