@@ -22,11 +22,10 @@ export const metadata: Metadata = {
     default: "ALPR · Harry Ludemann",
     template: "%s · Harry Ludemann",
   },
-  description:
-    "New Zealand licence plate recognition. Drop a photo — inference runs on a Raspberry Pi at alpr.api.harryludemann.com.",
+  description: "New Zealand licence plate recognition. Drop a photo and read the plate.",
   openGraph: {
     title: "ALPR · Harry Ludemann",
-    description: "Upload a vehicle photo and read NZ plates from a Raspberry Pi in the background.",
+    description: "Upload a vehicle photo and read New Zealand licence plates.",
     type: "website",
     locale: "en_NZ",
     siteName: "Harry Ludemann ALPR",

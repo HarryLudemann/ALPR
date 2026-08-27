@@ -1,11 +1,9 @@
 # ALPR · Harry Ludemann
 
-Two pieces:
+1. **Website** (`alpr.harryludemann.com`) — Next.js on Vercel.
+2. **API** (`alpr.api.harryludemann.com`) — FastAPI on a Raspberry Pi.
 
-1. **Website** (`alpr.harryludemann.com`) — Next.js on Vercel. Upload a photo, draw boxes, show NZ plates.
-2. **API** (`alpr.api.harryludemann.com`) — FastAPI on a Raspberry Pi. Runs YOLOv9 plate detection + MobileViT OCR (the same `fast_alpr` stack as the old script, minus EasyOCR/Tesseract so the Pi fits in RAM).
-
-The browser talks to the Pi **directly**. Images never pass through Vercel (Vercel’s body-size limit would clip them anyway).
+The browser sends photos straight to the Pi.
 
 ## Local website
 
@@ -45,23 +43,34 @@ docker compose up -d --build
 Health: `GET http://PI_IP:8000/health`  
 Recognize: `POST /recognize` with form field `image`.
 
-### Public hostname (recommended: Cloudflare Tunnel)
+### Public hostname (Nginx Proxy Manager)
 
-Home networks are often behind CGNAT, so a tunnel is simpler than port-forwarding.
+If the Pi already publishes other sites through the nginx GUI, add one more proxy host. Do not expose port 8000 on the internet.
 
-```bash
-cloudflared tunnel login
-cloudflared tunnel create alpr-api
-cloudflared tunnel route dns alpr-api alpr.api.harryludemann.com
+1. DNS: `A` (or `CNAME`) for `alpr.api.harryludemann.com` → the same public address your other NPM sites use.
+2. In **Proxy Hosts → Add Proxy Host**:
+   - Domain: `alpr.api.harryludemann.com`
+   - Scheme: `http`
+   - Forward hostname / IP:
+     - NPM in Docker on the **same Pi**: `172.17.0.1` (Docker bridge to the host)
+     - NPM on the host, not in Docker: `127.0.0.1`
+     - NPM on another machine: the Pi’s LAN IP
+   - Forward port: `8000`
+   - Websockets: off
+   - Block Common Exploits: on
+3. SSL tab: Request a Let’s Encrypt certificate, Force SSL, HTTP/2.
+4. Advanced tab (needed — default nginx rejects 8 MB uploads and the Pi can take a while):
+
+```nginx
+client_max_body_size 10m;
+proxy_read_timeout 120s;
+proxy_send_timeout 120s;
+proxy_connect_timeout 30s;
 ```
 
-Copy `cloudflared.yml.example` to `~/.cloudflared/config.yml`, fill in the tunnel id, then:
+Then `https://alpr.api.harryludemann.com/health` should return JSON. The Vercel site already calls that host.
 
-```bash
-cloudflared tunnel run alpr-api
-```
-
-If the Pi has a public IP instead, point an A/AAAA record at it and put Caddy in front with the included `Caddyfile`.
+Cloudflare Tunnel (`cloudflared.yml.example`) is only needed if you do **not** already have 80/443 reaching this nginx. Caddy (`Caddyfile`) is an alternative if you are not using the GUI.
 
 ### systemd (venv install)
 
@@ -86,9 +95,3 @@ sudo systemctl enable --now alpr
 4. Add the domain `alpr.harryludemann.com` in Vercel.
 
 CORS on the Pi already allows that origin (see `ALLOWED_ORIGINS` in `pi/.env.example`).
-
-## What changed from the old script
-
-Kept: YOLOv9 detector, global-plates OCR, 5% box padding, NZ regex, character confusion map.
-
-Dropped for the Pi: EasyOCR, Tesseract, albumentations, and fuzzy-matching against a known answer list (that was a test harness, not production).

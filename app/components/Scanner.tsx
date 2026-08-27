@@ -70,7 +70,7 @@ export default function Scanner() {
       const message = err instanceof Error ? err.message : "Recognition failed.";
       setError(
         message.includes("fetch") || message.includes("Network")
-          ? "Cannot reach the Raspberry Pi. Is alpr.api.harryludemann.com online?"
+          ? "Can't reach the recognition server. Try again in a moment."
           : message,
       );
     } finally {

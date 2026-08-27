@@ -1,6 +1,7 @@
 services:
   alpr:
     build: .
+    container_name: alpr
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -8,6 +9,8 @@ services:
       - .env
     environment:
       ORT_DISABLE_TENSORRT: "1"
+    networks:
+      - npm
     volumes:
       - huggingface:/root/.cache
     healthcheck:
@@ -16,6 +19,11 @@ services:
       timeout: 10s
       retries: 5
       start_period: 180s
+
+networks:
+  npm:
+    external: true
+    name: ${NPM_NETWORK:-docker_web}
 
 volumes:
   huggingface:

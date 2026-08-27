@@ -10,9 +10,8 @@ export default function Home() {
         Read the plate.
       </h1>
       <p className="mt-4 max-w-xl text-base leading-7 text-zinc-400">
-        Drop a photo of a vehicle. Detection and OCR run on a Raspberry Pi at{" "}
-        <span className="text-zinc-200">alpr.api.harryludemann.com</span> — not in the
-        browser, and not on Vercel.
+        Drop a photo of a vehicle. Recognition runs on a Raspberry Pi at{" "}
+        <span className="text-zinc-200">alpr.api.harryludemann.com</span>.
       </p>
 
       <div className="mt-10">

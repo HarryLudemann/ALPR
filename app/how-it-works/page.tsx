@@ -7,28 +7,28 @@ export const metadata: Metadata = {
 const STEPS = [
   {
     n: "01",
-    title: "The website stays light",
-    body: "This site is a Next.js front end on Vercel. It never loads YOLO or OCR models. It only sends your photo to the Pi and draws the boxes that come back.",
+    title: "Upload a photo",
+    body: "The site sends the image to the API and draws the boxes that come back.",
   },
   {
     n: "02",
-    title: "The Pi does the heavy lifting",
-    body: "A FastAPI service on the Raspberry Pi receives the image at alpr.api.harryludemann.com. One request at a time, CPU ONNX — no TensorRT, no CUDA.",
+    title: "Raspberry Pi",
+    body: "A service on the Pi handles recognition, one image at a time.",
   },
   {
     n: "03",
     title: "Find the plate",
-    body: "YOLOv9-tiny (384) locates licence plate regions. Each box is padded by 5% so characters on the edge still get read.",
+    body: "A detector locates licence plate regions in the photo.",
   },
   {
     n: "04",
     title: "Read the characters",
-    body: "A MobileViT global-plates OCR model reads the crop. EasyOCR and Tesseract from the original test script are skipped here so the Pi stays within RAM.",
+    body: "OCR reads the cropped plate and returns the text with a confidence score.",
   },
   {
     n: "05",
-    title: "NZ format cleanup",
-    body: "Confused pairs like 0/O, 8/B, and 5/S are swapped and scored against New Zealand plate patterns. Unlike the old tester, this path never looks at a known answer sheet.",
+    title: "NZ format",
+    body: "Common character mix-ups like 0/O and 8/B are checked against New Zealand plate patterns.",
   },
 ];
 
@@ -38,8 +38,7 @@ export default function HowItWorksPage() {
       <p className="font-mono text-[11px] uppercase tracking-[0.32em] text-amber-400">Pipeline</p>
       <h1 className="mt-3 text-4xl font-light text-white">How it works</h1>
       <p className="mt-4 text-zinc-400">
-        Two machines, one job. The public site is static-ish. The recogniser lives on hardware
-        on my desk.
+        Photos are sent to a Raspberry Pi, which finds plates and reads them.
       </p>
 
       <ol className="mt-10 space-y-4">
