@@ -1,7 +1,7 @@
 """New Zealand plate text cleanup — production version.
 
-Unlike the original test harness, this never looks at expected/ground-truth
-plates. It only applies character-confusion swaps and NZ format scoring.
+Ordinary NZ plates are at most 6 characters (typically AAA123). This never
+looks at expected/ground-truth plates.
 """
 
 from __future__ import annotations
@@ -9,12 +9,13 @@ from __future__ import annotations
 import re
 from typing import Any
 
-NZ_PATTERNS = [
-    r"^[A-HJ-NP-Z]{3}\d{3}$",
-    r"^[A-HJ-NP-Z]{2}\d{3,4}$",
-    r"^[A-HJ-NP-Z]{3}\d{4}$",
-    r"^[A-Z]{1,3}\d{1,4}$",
-]
+# Current car series: 3 letters (no I/O) + 3 digits, numbers 100–999.
+STANDARD_LLLNNN = re.compile(r"^[A-HJ-NP-Z]{3}[1-9]\d{2}$")
+# Last two-letter series was often 2 letters + 4 digits (e.g. XM4677).
+TWO_LETTER_4 = re.compile(r"^[A-HJ-NP-Z]{2}\d{4}$")
+TWO_LETTER_3 = re.compile(r"^[A-HJ-NP-Z]{2}\d{3}$")
+THREE_LETTER_2 = re.compile(r"^[A-HJ-NP-Z]{3}\d{1,2}$")
+PERSONAL = re.compile(r"^[A-Z0-9]{4,6}$")
 
 CHAR_CORRECTIONS = {
     "0": ["O", "D", "Q"],
@@ -67,23 +68,34 @@ def ocr_confidence_value(confidence: Any) -> float:
 
 
 def score_nz(text: str) -> tuple[bool, float]:
-    if not text or not (4 <= len(text) <= 8):
+    if not text or len(text) < 4:
         return False, 0.0
+    # Ordinary and personalised plates are 6 characters or fewer.
+    if len(text) > 6:
+        return False, 0.12
 
-    is_valid = any(re.match(pattern, text) for pattern in NZ_PATTERNS)
+    if STANDARD_LLLNNN.match(text):
+        return True, 0.96
+    if TWO_LETTER_4.match(text):
+        return True, 0.88
+    if TWO_LETTER_3.match(text):
+        return True, 0.82
+    if THREE_LETTER_2.match(text):
+        return True, 0.78
+    if PERSONAL.match(text) and any(ch.isalpha() for ch in text) and any(ch.isdigit() for ch in text):
+        return True, 0.58
+    if PERSONAL.match(text):
+        return True, 0.5
+    return False, 0.28 if 4 <= len(text) <= 6 else 0.0
 
-    if re.match(r"^[A-HJ-NP-Z]{3}\d{3,4}$", text):
-        confidence = 0.95
-    elif re.match(r"^[A-HJ-NP-Z]{2}\d{3,4}$", text):
-        confidence = 0.85
-    elif re.match(r"^[A-Z]{1,3}\d{1,4}$", text):
-        confidence = 0.75
-    elif is_valid:
-        confidence = 0.6
-    else:
-        confidence = 0.35 if 4 <= len(text) <= 8 else 0.0
 
-    return is_valid, confidence
+def is_structured(text: str) -> bool:
+    return bool(
+        STANDARD_LLLNNN.match(text)
+        or TWO_LETTER_4.match(text)
+        or TWO_LETTER_3.match(text)
+        or THREE_LETTER_2.match(text)
+    )
 
 
 def _neighbors(text: str) -> set[str]:
@@ -95,11 +107,41 @@ def _neighbors(text: str) -> set[str]:
             swapped = chars[:]
             swapped[i] = alt
             candidate = "".join(swapped)
-            if 4 <= len(candidate) <= 8:
+            if 4 <= len(candidate) <= 6:
                 found.add(candidate)
             if len(found) >= 48:
                 return found
     return found
+
+
+def _length_candidates(text: str) -> set[str]:
+    """Drop extra OCR glyphs. 7-char reads like HSA1377 are almost never real NZ plates."""
+    found = {text}
+    if 4 <= len(text) <= 6:
+        return found
+
+    for i in range(len(text)):
+        trimmed = text[:i] + text[i + 1 :]
+        if 4 <= len(trimmed) <= 6:
+            found.add(trimmed)
+
+    if len(text) >= 7:
+        found.add(text[:6])
+        found.add(text[-6:])
+        found.add(text[1:7])
+
+    return {item for item in found if 4 <= len(item) <= 6} or {text}
+
+
+def _alignment(candidate: str, raw: str) -> tuple[int, int]:
+    """Prefer keeping the start of the OCR string (trailing frame glyphs are common)."""
+    if candidate == raw:
+        return (2, len(candidate))
+    if raw.startswith(candidate):
+        return (1, len(candidate))
+    if raw.endswith(candidate):
+        return (0, len(candidate))
+    return (-1, 0)
 
 
 def refine_plate_text(raw: str) -> dict[str, Any]:
@@ -112,21 +154,39 @@ def refine_plate_text(raw: str) -> dict[str, Any]:
             "candidates": [],
         }
 
+    if 4 <= len(cleaned) <= 6 and is_structured(cleaned):
+        valid, conf = score_nz(cleaned)
+        return {
+            "text": cleaned,
+            "is_nz_format": valid,
+            "pattern_confidence": round(conf, 4),
+            "candidates": [cleaned],
+        }
+
+    seeds = _length_candidates(cleaned)
     ranked: list[tuple[str, bool, float]] = []
     seen: set[str] = set()
-    for candidate in _neighbors(cleaned):
-        if candidate in seen:
-            continue
-        seen.add(candidate)
-        valid, conf = score_nz(candidate)
-        ranked.append((candidate, valid, conf))
+    for seed in seeds:
+        for candidate in _neighbors(seed):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            valid, conf = score_nz(candidate)
+            ranked.append((candidate, valid, conf))
 
-    ranked.sort(key=lambda item: (item[1], item[2], item[0] == cleaned), reverse=True)
+    ranked.sort(
+        key=lambda item: (
+            item[2],
+            item[1],
+            _alignment(item[0], cleaned),
+        ),
+        reverse=True,
+    )
     best_text, best_valid, best_conf = ranked[0]
-
-    # Trust the OCR string when it already looks like an NZ plate.
     original_valid, original_conf = score_nz(cleaned)
-    if original_valid:
+    if is_structured(best_text) and not is_structured(cleaned):
+        pass
+    elif 4 <= len(cleaned) <= 6 and original_valid:
         best_text, best_valid, best_conf = cleaned, original_valid, original_conf
 
     nz_candidates = [item[0] for item in ranked if item[1] and item[0] != best_text]
