@@ -37,3 +37,8 @@ export type HealthResponse = {
   uptime_s: number;
   models: { detector: string; ocr: string };
 };
+
+export type StatsResponse = {
+  total_recognized: number;
+  total_requests: number;
+};

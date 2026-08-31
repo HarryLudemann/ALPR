@@ -1,4 +1,4 @@
-import type { HealthResponse, RecognizeResponse } from "./types";
+import type { HealthResponse, RecognizeResponse, StatsResponse } from "./types";
 
 export const API_BASE = (
   process.env.NEXT_PUBLIC_ALPR_API_URL ?? "https://alpr.api.harryludemann.com"
@@ -21,6 +21,15 @@ export async function fetchHealth(signal?: AbortSignal): Promise<HealthResponse>
   const data = (await response.json().catch(() => null)) as HealthResponse | null;
   if (!response.ok || !data) {
     throw new Error(`Pi health check failed (${response.status})`);
+  }
+  return data;
+}
+
+export async function fetchStats(signal?: AbortSignal): Promise<StatsResponse> {
+  const response = await fetch(`${API_BASE}/stats`, { signal, cache: "no-store" });
+  const data = (await response.json().catch(() => null)) as StatsResponse | null;
+  if (!response.ok || !data) {
+    throw new Error(`Stats check failed (${response.status})`);
   }
   return data;
 }

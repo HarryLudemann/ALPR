@@ -36,6 +36,9 @@ log = logging.getLogger("alpr-api")
 engine: AlprEngine | None = None
 load_error: str | None = None
 ready = False
+total_recognized = 0
+total_requests = 0
+recognition_lock = threading.Lock()
 
 
 class RateLimiter:
@@ -112,9 +115,19 @@ def root() -> dict[str, str]:
     return {
         "service": "alpr",
         "health": "/health",
+        "stats": "/stats",
         "recognize": "POST /recognize",
         "docs": "/docs",
     }
+
+
+@app.get("/stats")
+def stats() -> dict[str, int]:
+    with recognition_lock:
+        return {
+            "total_recognized": total_recognized,
+            "total_requests": total_requests,
+        }
 
 
 @app.get("/health")
@@ -179,6 +192,11 @@ async def recognize(request: Request, image: UploadFile = File(...)) -> JSONResp
     except Exception:
         log.exception("Recognition failed")
         raise HTTPException(status_code=500, detail="Recognition failed on the Pi.") from None
+
+    with recognition_lock:
+        global total_recognized, total_requests
+        total_recognized += len(result.get("plates", []))
+        total_requests += 1
 
     result["filename"] = image.filename
     return JSONResponse(result)
