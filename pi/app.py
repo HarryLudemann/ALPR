@@ -107,7 +107,26 @@ def _require_key(request: Request) -> None:
         return
     provided = request.headers.get("x-api-key", "")
     if provided != API_KEY:
+        client_ip = _client_ip(request)
+        log.warning("Rejected API request to %s from IP %s: invalid or missing API key", request.url.path, client_ip)
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    client_ip = _client_ip(request)
+    response = await call_next(request)
+    elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+    log.info(
+        "%s %s from %s -> %s in %.2fms",
+        request.method,
+        request.url.path,
+        client_ip,
+        response.status_code,
+        elapsed_ms,
+    )
+    return response
 
 
 @app.get("/")
@@ -130,7 +149,7 @@ def stats() -> dict[str, int]:
         }
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health() -> dict[str, object]:
     status = "ready" if ready else ("error" if load_error else "loading")
     return {
@@ -155,12 +174,15 @@ def health() -> dict[str, object]:
 
 @app.post("/recognize")
 async def recognize(request: Request, image: UploadFile = File(...)) -> JSONResponse:
+    client_ip = _client_ip(request)
     _require_key(request)
 
-    if not limiter.allow(_client_ip(request)):
+    if not limiter.allow(client_ip):
+        log.warning("Rate limit hit for IP %s on /recognize", client_ip)
         raise HTTPException(status_code=429, detail="Too many requests — try again shortly.")
 
     if not ready or engine is None:
+        log.warning("Recognition request from IP %s rejected: models not ready (%s)", client_ip, load_error)
         raise HTTPException(
             status_code=503,
             detail=load_error or "Models are still loading. Retry in a few seconds.",
